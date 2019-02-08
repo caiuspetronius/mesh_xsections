@@ -1,1 +1,2 @@
 
+MESH_XSECTIONS is a Matlab function returning cross-sections of a triangulation mesh with a set of planes. Each cross-section is a cell array with one or more polygons (consecutive points in 3D). The function handles meshes with duplicated vertices (by fusing them) and open boundary edges (by cutting across the edge).
