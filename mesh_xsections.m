@@ -20,7 +20,7 @@ if nargin < 4 || isempty( precision )
 end
 if nargin < 3 || isempty( planes )
     planes.n = [ 1 0 0; 0 1 0; 0 0 1 ]; % 3 cardinal crossections
-    planes.r = 1e-6 + [ 0 0 0; 0 0 0; 0 0 6 ]; % all plane origins to 0
+    planes.r = 1e-6 + [ 0 0 0; 0 0 0; 0 0 0 ]; % all plane origins to 0
 end
 nplanes = size( planes.n, 1 );
 if nargin < 2 || isempty( faces ) || isempty( verts )
@@ -53,7 +53,7 @@ ed = verts( E( :, 2 ), : ) - er; % edge vectors
 el = sqrt( sum( ed.^2, 2 ) ); % edge lengths
 en = ed ./ repmat( el, 1, 3 ); % normalized edge directions
 polygons = cell( 1, nplanes ); % pre-allocate for speed
-for s = 1 : nplanes
+parfor s = 1 : nplanes
     % distance to the plane along the edge rays
     d = dot( repmat( planes.n( s, : ), nedges, 1 ), repmat( planes.r( s, : ), nedges, 1 ) - er, 2 ) ./ ...
         dot( en, repmat( planes.n( s, : ), nedges, 1 ), 2 );

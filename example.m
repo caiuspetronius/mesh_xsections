@@ -24,6 +24,10 @@ planes.r = 1e-6 + [ 0 0 2; 0 0 2; 0 0 2 ]; % plane origins at [ 0, 0, 2 ]
 figure( 'Position', [ 100, 100, 800, 800 ] ), hold on;
 axis vis3d equal;
 view( -45, 45 );
+xlabel( 'X', 'FontSize', 14 );
+ylabel( 'Y', 'FontSize', 14 );
+zlabel( 'Z', 'FontSize', 14 );
+
 for i = 1 : length( O.objects )
     if strcmp( O.objects( i ).type, 'o' ) || strcmp( O.objects( i ).type, 'g' ) % start of the new object or group
         objectName = O.objects( i ).data;
