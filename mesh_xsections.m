@@ -64,12 +64,14 @@ elseif display == 2
 elseif display == 3
     patch( 'Faces', faces, 'Vertices', verts, 'FaceColor', 'y', 'FaceAlpha', 0.75, 'EdgeAlpha', 0.75 ); % display the mesh
 end
+hold on;
 
 % find cross-sections
 warning( 'off', 'MATLAB:triangulation:PtsNotInTriWarnId' ); % turn off Matlab warning about verts not accounted by faces
 TR = triangulation( faces, verts ); % create the Matlab triangulation object for the mesh
 E = TR.edges; % get all the edges in the mesh
 nedges = size( E, 1 );
+nverts = size( verts, 1 );
 er = verts( E( :, 1 ), : );
 ed = verts( E( :, 2 ), : ) - er; % edge vectors
 el = sqrt( sum( ed.^2, 2 ) ); % edge lengths
@@ -77,23 +79,26 @@ en = ed ./ repmat( el, 1, 3 ); % normalized edge directions
 polygons = cell( 1, nplanes ); % pre-allocate for speed
 
 for s = 1 : nplanes
-    % distance to the plane along the edge rays
-    pn = repmat( planes.n( s, : ), nedges, 1 );
-    pr = repmat( planes.r( s, : ), nedges, 1 );
-    d = dot( pn, pr - er, 2 ) ./ dot( en, pn, 2 );
-    zinds = abs( d ) < precision;
-    if sum( zinds ) > 0
-        zinds = unique( E( zinds, 1 ) ); % zero vertex indices in the vert array
-        fprintf( [ 'Plane crosses vertices [' repmat( '%d ', 1, length( zinds ) ) '] within precision %e!\n'], zinds, precision );
+    % check that the plane doesn't intersect mesh vertices
+    pn = repmat( planes.n( s, : ), nverts, 1 );
+    pr = repmat( planes.r( s, : ), nverts, 1 );
+    d = dot( pn, verts - pr, 2 );
+    zinds = find( abs( d ) < precision );
+    if ~isempty( zinds )
+        fprintf( [ 'Plane crosses vertices [ ' repmat( '%d ', 1, length( zinds ) ) '] within precision %e!\n'], zinds, precision );
         verts( zinds, : ) = verts( zinds, : ) + ...
             repmat( planes.n( s, : ), length( zinds ), 1 ) * 2 * precision; % shift the vertices along the plane normal by 2 * precision
-        % recalculate edge intersections
+        % recalculate edges
         er = verts( E( :, 1 ), : );
         ed = verts( E( :, 2 ), : ) - er; % edge vectors
         el = sqrt( sum( ed.^2, 2 ) ); % edge lengths
         en = ed ./ repmat( el, 1, 3 ); % normalized edge directions
-        d = dot( pn, pr - er, 2 ) ./ dot( en, pn, 2 );
     end
+    
+    % distance to the plane along the edge rays
+    pn = repmat( planes.n( s, : ), nedges, 1 );
+    pr = repmat( planes.r( s, : ), nedges, 1 );
+    d = dot( pn, pr - er, 2 ) ./ dot( en, pn, 2 );
     
     % find distances smaller than the edge length
     % inti = d > -precision  & d < el + precision; % logical indices of the edges intersecting the plane within the precision
@@ -142,8 +147,8 @@ for s = 1 : nplanes
                 fprintf( '%.6f ', el( fe ) );
                 fprintf( '\nEdge interxs:\t' );
                 fprintf( '%.6f ', d( fe ) );
-                % r = [ verts( fv, : ); verts( fv(1), : ) ];
-                % plot3( r( :, 1 ),  r( :, 2 ),  r( :, 3 ), 'g-', 'LineWidth', 2 );
+                r = [ verts( fv, : ); verts( fv(1), : ) ];
+                plot3( r( :, 1 ),  r( :, 2 ),  r( :, 3 ), 'g-', 'LineWidth', 2 );
             end
             fprintf( '\n ' );
         end

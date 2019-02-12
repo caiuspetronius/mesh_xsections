@@ -20,7 +20,7 @@ fprintf( 'Found %d vertices in the input file\n', size( verts, 1 ) );
 
 % define cross-section planes
 planes.n = [ 1 0 0; 0 1 0; 0 0 1 ]; % 3 cardinal crossections
-planes.r = 1e-6 + [ 0 0 2; 0 0 2; 0 0 2 ]; % plane origins at [ 0, 0, 2 ]
+planes.r = [ 0 0 2; 0 0 2; 0 0 2 ]; % plane origins at [ 0, 0, 2 ]
 
 figure( 'Position', [ 100, 100, 800, 800 ] ), hold on;
 axis vis3d equal;
