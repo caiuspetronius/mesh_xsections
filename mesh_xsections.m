@@ -1,4 +1,4 @@
-function polygons = mesh_xsections( verts, faces, planes, precision )
+function polygons = mesh_xsections( verts, faces, planes, precision, display )
 % GETXSECTIONPOLYGONS finds cross-sections of a mesh by a family of
 % planes and returns the resulting polygons
 %
@@ -11,10 +11,14 @@ function polygons = mesh_xsections( verts, faces, planes, precision )
 %   planes - a structure defining the x-section planes as a matrix 
 %            of K x 3 normals planes.n and K x 3 orgin points plane.r
 %   precision - vertices closer than this will be fused
+%   display - 0, no plot, 1 - vertices, 2 - edges, 3 - faces
 %
 % Copyright: Yury Petrov, 2019
 %
 
+if nargin < 5 || isempty( display )
+    display = 0;
+end
 if nargin < 4 || isempty( precision )
     precision = 1e-6; % vertices closer than this in space will be fused
 end
@@ -31,8 +35,8 @@ end
 % lot in real-world meshes for some reason)
 cnt = 0;
 for i = 1 : size( verts, 1 )
-    d = sum( ( verts( i, : ) - verts ).^2, 2 );
-    zi = find( d < precision^2 );
+    d = sum( ( verts( i, : ) - verts( i + 1 : end, : ) ).^2, 2 );
+    zi = i + find( d < precision^2 );
     zi( zi == i ) = []; % exclude self distance
     if ~isempty( zi ) % replace indices for repeated locations by i
         for j = 1 : length( zi )
@@ -42,6 +46,24 @@ for i = 1 : size( verts, 1 )
     end
 end
 fprintf( 'Corrected the mesh for %d vertex replicas\n', cnt );
+
+% check for duplicated faces
+sf =  sort( faces, 2 );
+[ ~, ia ] = unique( sf, 'rows' );
+dups = setdiff( 1 : size( faces, 1 ), ia );
+if ~isempty( dups )
+    fprintf( 'Mesh topology: Found duplicate faces, removing %d duplicates!\n', length( dups ) );   
+    faces( dups, : ) = [];
+end
+
+% plot the input mesh
+if display == 1
+    plot3( verts( :, 1 ), verts( :, 2 ), verts( :, 3 ), 'k.' )
+elseif display == 2
+    patch( 'Faces', faces, 'Vertices', verts, 'FaceAlpha', 0, 'EdgeAlpha', 1 ); % display the mesh edges
+elseif display == 3
+    patch( 'Faces', faces, 'Vertices', verts, 'FaceColor', 'y', 'FaceAlpha', 0.75, 'EdgeAlpha', 0.75 ); % display the mesh
+end
 
 % find cross-sections
 warning( 'off', 'MATLAB:triangulation:PtsNotInTriWarnId' ); % turn off Matlab warning about verts not accounted by faces
@@ -53,25 +75,38 @@ ed = verts( E( :, 2 ), : ) - er; % edge vectors
 el = sqrt( sum( ed.^2, 2 ) ); % edge lengths
 en = ed ./ repmat( el, 1, 3 ); % normalized edge directions
 polygons = cell( 1, nplanes ); % pre-allocate for speed
-parfor s = 1 : nplanes
+
+for s = 1 : nplanes
     % distance to the plane along the edge rays
-    d = dot( repmat( planes.n( s, : ), nedges, 1 ), repmat( planes.r( s, : ), nedges, 1 ) - er, 2 ) ./ ...
-        dot( en, repmat( planes.n( s, : ), nedges, 1 ), 2 );
+    pn = repmat( planes.n( s, : ), nedges, 1 );
+    pr = repmat( planes.r( s, : ), nedges, 1 );
+    d = dot( pn, pr - er, 2 ) ./ dot( en, pn, 2 );
+    zinds = abs( d ) < precision;
+    if sum( zinds ) > 0
+        zinds = unique( E( zinds, 1 ) ); % zero vertex indices in the vert array
+        fprintf( [ 'Plane crosses vertices [' repmat( '%d ', 1, length( zinds ) ) '] within precision %e!\n'], zinds, precision );
+        verts( zinds, : ) = verts( zinds, : ) + ...
+            repmat( planes.n( s, : ), length( zinds ), 1 ) * 2 * precision; % shift the vertices along the plane normal by 2 * precision
+        % recalculate edge intersections
+        er = verts( E( :, 1 ), : );
+        ed = verts( E( :, 2 ), : ) - er; % edge vectors
+        el = sqrt( sum( ed.^2, 2 ) ); % edge lengths
+        en = ed ./ repmat( el, 1, 3 ); % normalized edge directions
+        d = dot( pn, pr - er, 2 ) ./ dot( en, pn, 2 );
+    end
+    
     % find distances smaller than the edge length
-    inti = d > 0 & d < el; % logical indices of the edges intersecting the plane
+    % inti = d > -precision  & d < el + precision; % logical indices of the edges intersecting the plane within the precision
+    inti = d > 0  & d < el; % logical indices of the edges intersecting the plane within the precision
     
     if ~sum( inti ) == 0 % found some intersections
         rinter = er( inti, : ) + repmat( d( inti ), 1, 3 ) .* en( inti, : ); % intersection vectors
         % plot3( rinter( :, 1 ), rinter( :, 2 ), rinter( :, 3 ), 'r.', 'MarkerSize', 13 );
         
-        % check that intersections don't coincide with any vertices
-        [ k, dist ] = dsearchn( verts, rinter );
-        if sum( abs( dist ) < 1e-9 )
-            error( 'Vertex %d is coincident with one of the intersection points!', k );
-        end
         einter = E( inti, : );  % interaction edges
         finter = edgeAttachments( TR, einter ); % faces attached to the interaction edges
-        % check that there no more than 2 faces per edge
+        
+        % check basic topology
         for edge = 1 : length( finter )
             nfaces = length( finter{ edge } );
             if nfaces > 2
@@ -86,7 +121,35 @@ parfor s = 1 : nplanes
                 % disp( einter( edge, : ) );
             end
         end
-        loops = getLoops( cell2mat( finter ) );
+        
+        % check if every face appears twice now
+        finter = cell2mat( finter );
+        [ uf, ~, ic ] = unique( finter(:) );
+        counts = accumarray( ic, 1 );
+        de = find( counts == 1 );
+        if ~isempty( de )
+            fprintf( 'Singleton faces found!' );
+            for i = 1 : length( de )
+                sf = uf( de( i ) ); % the singleton face
+                fprintf( '\nSingleton face: %d\n', sf );
+                fv = faces( sf, : ); % vertices of this face
+                fe(1) = find( E( :, 1 ) == fv(1) & E( :, 2 ) == fv(2) | E( :, 1 ) == fv(2) & E( :, 2 ) == fv(1) );
+                fe(2) = find( E( :, 1 ) == fv(2) & E( :, 2 ) == fv(3) | E( :, 1 ) == fv(3) & E( :, 2 ) == fv(2) );
+                fe(3) = find( E( :, 1 ) == fv(1) & E( :, 2 ) == fv(3) | E( :, 1 ) == fv(3) & E( :, 2 ) == fv(1) );
+                fprintf( 'Edge numbers:\t' );
+                fprintf( '%d ', fe );
+                fprintf( '\nEdge lengths:\t' );
+                fprintf( '%.6f ', el( fe ) );
+                fprintf( '\nEdge interxs:\t' );
+                fprintf( '%.6f ', d( fe ) );
+                % r = [ verts( fv, : ); verts( fv(1), : ) ];
+                % plot3( r( :, 1 ),  r( :, 2 ),  r( :, 3 ), 'g-', 'LineWidth', 2 );
+            end
+            fprintf( '\n ' );
+        end
+        
+        % form the loops
+        loops = getLoops( finter );
     else
         loops = {};
     end
@@ -135,7 +198,7 @@ while ~all( looped )
         ni = find( sm ); % at least one of the two indices matches
         ni = ni( ni ~= i ); % skip the self link
         nv = inds( ni, inds( ni, : ) ~= iv ); % index value at the new location
-        if ~isempty( nv )
+        if length( nv ) == 1
             if ni ~= loops{ cnt }(1) % if a new index is not the beginning of the loop
                 loops{ cnt } = [ loops{ cnt } ni ]; % append the new index to the loop
             else % close the loop
@@ -149,35 +212,39 @@ while ~all( looped )
                     cut = ni;
                 end
             end
-        elseif isempty( nv ) % link with both elements equal (loops on itself), cut loop
-            looped( ni ) = 1; % mark as looped
-            loops{ cnt } = [ loops{ cnt } ni ]; % append the new index to the loop
-            if cut == 0 % first time a cut was encountered
-                cut = length( loops{ cnt } ); % store the cut location in the loop
-                ns = loops{ cnt }(1); % start from the beginning of the loop again
-                nv = inds( ns, 2 ); % but from the second link this time
-                ni = find( sum( inds == nv, 2 ) ); % at least one of the two indices matches
-                ni = ni( ni ~= ns ); % skip the self link
-                nv = inds( ni, 1 );
-            else % the other edge found, close the cut loop
-                if length( loops{ cnt } ) > 1  % loops should be at least 2 elements long
-                    if cut ~= 1 % started the loop from the cut edge
-                        tmp = loops{ cnt }( cut + 1 : end ); % the second part of the loop
-                        loops{ cnt } = [ fliplr( tmp ) loops{ cnt }( 1 : cut ) ]; % flip and prepend to the first part
+        elseif length( nv ) > 1
+            error( 'Link topology: index %d connected to more than 2 indices!\n', ni );
+        else % no connection
+            if sm( ni ) == 2 % link with both elements equal (loops on itself), cut loop
+                looped( ni ) = 1; % mark as looped
+                loops{ cnt } = [ loops{ cnt } ni ]; % append the new index to the loop
+                if cut == 0 % first time a cut was encountered
+                    cut = length( loops{ cnt } ); % store the cut location in the loop
+                    ns = loops{ cnt }(1); % start from the beginning of the loop again
+                    nv = inds( ns, 2 ); % but from the second link this time
+                    ni = find( sum( inds == nv, 2 ) ); % at least one of the two indices matches
+                    ni = ni( ni ~= ns ); % skip the self link
+                    nv = inds( ni, 1 );
+                else % the other edge found, close the cut loop
+                    if length( loops{ cnt } ) > 1  % loops should be at least 2 elements long
+                        if cut ~= 1 % started the loop from the cut edge
+                            tmp = loops{ cnt }( cut + 1 : end ); % the second part of the loop
+                            loops{ cnt } = [ fliplr( tmp ) loops{ cnt }( 1 : cut ) ]; % flip and prepend to the first part
+                        end
+                        cnt = cnt + 1;
                     end
-                    cnt = cnt + 1;
+                    newloop = true;
+                    ni = find( looped == 0, 1 ); % find the next unexplored link
+                    nv = inds( ni, 1 );
+                    if nv == inds( i, 2 ) % happens to be a cut
+                        cut = 1;
+                    else
+                        cut = 0;
+                    end
                 end
-                newloop = true;
-                ni = find( looped == 0, 1 ); % find the next unexplored link
-                nv = inds( ni, 1 );
-                if nv == inds( i, 2 ) % happens to be a cut
-                    cut = 1;
-                else
-                    cut = 0;
-                end
+            else % a face is only encountered once along a loop, topolology defect!
+                error( 'Link topology: index %d connected to a singleton index!\n', i );
             end
-        else
-            error( 'Link topology: index %d connected to more than 2 indices!\n' );
         end
         i = ni; % interate to the new index
         iv = nv;

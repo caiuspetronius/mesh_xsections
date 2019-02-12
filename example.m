@@ -4,6 +4,7 @@
 
 % read the data file (Wavefront .obj file saved into a matlab structure, e.g., using read_wobj)
 load( 'stomach+duodenum+pancreas.mat', 'O' );
+% load( '12140_Skull_v3_L2.mat', 'O' );
 
 % count the number of objects in the file
 nobj = 0;
@@ -37,7 +38,7 @@ for i = 1 : length( O.objects )
         patch( 'Faces', faces, 'Vertices', verts, 'FaceAlpha', 0, 'EdgeAlpha', 1 ); % display the mesh
         
         % get intersection polygons for all planes
-        polygons = mesh_xsections( verts, faces, planes );
+        polygons = mesh_xsections( verts, faces, planes, [], 2 );
         
         % draw the object polygons
         for s = 1 : numel( polygons )
